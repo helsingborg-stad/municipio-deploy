@@ -13,7 +13,7 @@ inputs:
     required: true
   deploy-host-backup-path:
     description: Backup path for changed and deleted files after rsync deploy.
-    required: true
+    required: false
   deploy-host-user:
     description: Username of the rsync deployment.
     required: true
@@ -111,7 +111,7 @@ runs:
     - name: Compress backup files.
       uses: appleboy/ssh-action@v0.1.4
       with:
-        script: tar --remove-files -zcf ${{ inputs.deploy-host-backup-path }}/${{ github.sha }}.tar.gz -C ${{ inputs.deploy-host-backup-path }} ${{ github.sha }}
+        script: [[ "${{inputs.deploy-host-backup-path}}" != "" ]] && tar --remove-files -zcf ${{ inputs.deploy-host-backup-path }}/${{ github.sha }}.tar.gz -C ${{ inputs.deploy-host-backup-path }} ${{ github.sha }}
         host: ${{ inputs.deploy-host }}
         username: ${{ inputs.deploy-host-user }}
         key: ${{ inputs.deploy-host-user-key }}
