@@ -111,7 +111,7 @@ runs:
     - name: Compress backup files.
       uses: appleboy/ssh-action@v0.1.4
       with:
-        script: [[ "${{inputs.deploy-host-backup-path}}" != "" ]] && tar --remove-files -zcf ${{ inputs.deploy-host-backup-path }}/${{ github.sha }}.tar.gz -C ${{ inputs.deploy-host-backup-path }} ${{ github.sha }}
+        script: ${{inputs.deploy-host-backup-path }} != "" && tar --remove-files -zcf ${{ inputs.deploy-host-backup-path }}/${{ github.sha }}.tar.gz -C ${{ inputs.deploy-host-backup-path }} ${{ github.sha }}
         host: ${{ inputs.deploy-host }}
         username: ${{ inputs.deploy-host-user }}
         key: ${{ inputs.deploy-host-user-key }}
@@ -120,7 +120,7 @@ runs:
     - name: Delete backups older than 7 days.
       uses: appleboy/ssh-action@v0.1.4
       with:
-        script: [[ "${{inputs.deploy-host-backup-path}}" != "" ]] && find ${{ inputs.deploy-host-backup-path }} -type f -mtime +7 -name '*.tar.gz' -delete
+        script: ${{ inputs.deploy-host-backup-path }}" != "" && find ${{ inputs.deploy-host-backup-path }} -type f -mtime +7 -name '*.tar.gz' -delete
         host: ${{ inputs.deploy-host }}
         username: ${{ inputs.deploy-host-user }}
         key: ${{ inputs.deploy-host-user-key }}
