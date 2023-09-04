@@ -37,8 +37,8 @@ runs:
       id: gitversion
       uses: gittools/actions/gitversion/execute@v0
       with:
+        targetPath: ${{ github.workspace }}
         useConfigFile: true
-        configFilePath: ${{ github.workspace }}/GitVersion.yml
     
     - name: Update package file versions
       run: php -f updatePackageVersion.php ${{ steps.gitversion.outputs.semVer }}
