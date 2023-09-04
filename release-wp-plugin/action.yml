@@ -9,6 +9,8 @@ inputs:
     description: Node Version
     default: 16.13.2
     required: false
+  use-gitversion-config-file:
+    description: Use GitVersion config file. 
 
 runs:
   using: composite
@@ -29,19 +31,14 @@ runs:
       with:
         versionSpec: '5.x'
 
-    - name: List files
-      run: ls -al
-      shell: bash
-
     - name: Determine Version
       id: gitversion
       uses: gittools/actions/gitversion/execute@v0
       with:
-        targetPath: ${{ github.workspace }}
         useConfigFile: true
     
     - name: Update package file versions
-      run: php -f updatePackageVersion.php ${{ steps.gitversion.outputs.semVer }}
+      run: php -f ${{ github.action_path }}/updatePackageVersion.php ${{ steps.gitversion.outputs.semVer }}
       shell: bash
     
     - name: Commit package file versions
