@@ -9,10 +9,6 @@ inputs:
     description: Node Version
     default: 16.13.2
     required: false
-  version-bump-commit-message:
-    description: Commit message for version bump.
-    default: "build: update package file versions to ${{ steps.gitversion.outputs.semVer }}"
-    required: false
 
 runs:
   using: composite
@@ -41,6 +37,7 @@ runs:
     
     - name: Update package file versions
       run: php -f updatePackageVersion.php ${{ steps.gitversion.outputs.semVer }}
+      shell: bash
     
     - name: Commit package file versions
       run: |
@@ -49,6 +46,7 @@ runs:
         git add .
         git commit -m "build: update package file versions to ${{ steps.gitversion.outputs.semVer }}"
         git push
+      shell: bash
     
     - uses: ncipollo/release-action@v1
       with:
