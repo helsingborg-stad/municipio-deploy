@@ -1,0 +1,56 @@
+name: Release WP Plugin
+description: Bump version string in package files and creates a release.
+inputs:
+  php-version:
+    description: PHP Version
+    default: 7.4
+    required: false
+  node-version:
+    description: Node Version
+    default: 16.13.2
+    required: false
+  version-bump-commit-message:
+    description: Commit message for version bump.
+    default: "build: update package file versions to ${{ steps.gitversion.outputs.semVer }}"
+    required: false
+
+runs:
+  using: composite
+  steps:
+
+    - uses: actions/setup-node@v3
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Setup PHP with composer v2.
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ inputs.php-version }}
+        tools: composer:v2
+
+    - name: Install GitVersion
+      uses: gittools/actions/gitversion/setup@v0
+      with:
+        versionSpec: '5.x'
+
+    - name: Determine Version
+      id: gitversion
+      uses: gittools/actions/gitversion/execute@v0
+      with:
+        useConfigFile: true
+    
+    - name: Update package file versions
+      run: php -f updatePackageVersion.php ${{ steps.gitversion.outputs.semVer }}
+    
+    - name: Commit package file versions
+      run: |
+        git config --local user.email ""
+        git config --local user.name "GitHub Action"
+        git add .
+        git commit -m "build: update package file versions to ${{ steps.gitversion.outputs.semVer }}"
+        git push
+    
+    - uses: ncipollo/release-action@v1
+      with:
+        generateReleaseNotes: true
+        tag: ${{ steps.gitversion.outputs.semVer }}
