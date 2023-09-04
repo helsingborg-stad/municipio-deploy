@@ -56,7 +56,7 @@ jobs:
         fetch-depth: 0
 
     - name: Create Release and bump version files
-      uses: helsingborg-stad/municipio-deploy/release-wp-plugin@feat/release-action
+      uses: helsingborg-stad/municipio-deploy/release-wp-plugin@master/release-action
   ```
 - Make sure branchname is matching the branch you would want to deploy.
 - Replace secret names with macthing secrets.
