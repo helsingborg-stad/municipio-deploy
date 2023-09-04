@@ -9,8 +9,6 @@ inputs:
     description: Node Version
     default: 16.13.2
     required: false
-  use-gitversion-config-file:
-    description: Use GitVersion config file. 
 
 runs:
   using: composite
