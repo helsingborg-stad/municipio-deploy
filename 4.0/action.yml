@@ -1,0 +1,154 @@
+name: Municipio Deploy 4.0
+description: Centralized deploy Action for municipio based sites in Helsingborg stad.
+inputs:
+  deploy-host:
+    description: Deployment host domain or ip.
+    required: true
+  deploy-port:
+    description: Deployment host ssh port.
+    default: 22
+    required: false
+  deploy-host-path:
+    description: Deployment path on server.
+    required: true
+  deploy-host-backup-path:
+    description: Backup path for changed and deleted files after rsync deploy.
+    required: true
+  deploy-host-user:
+    description: Username of the rsync deployment.
+    required: true
+  deploy-host-user-key: 
+    description: The ssh key of the user deploying through rsync.
+    required: true
+  deploy-host-web-server-user:
+    description: Host web server user that should own the files.
+    required: true  
+  github-token:
+    description: Github token for npm package retrieval.
+    required: true
+  acf-url:
+    description: ACF download url.
+    required: true
+  php-version:
+    description: PHP Version
+    default: 8.2
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v3
+      with:
+        node-version: 16.13.2
+
+    - name: Setup PHP with composer v2.
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ inputs.php-version }}
+        tools: composer:v2
+      env:
+        COMPOSER_TOKEN: ${{ inputs.github-token }}
+
+    - name: Get Composer Cache Directory.
+      id: composer-cache
+      run: |
+        echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+      shell: bash
+
+    - name: Cache composer packages.
+      uses: actions/cache@v3
+      with:
+        path: ${{ steps.composer-cache.outputs.dir }}
+        key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-composer-
+
+    - name: Cache node modules.
+      uses: actions/cache@v3
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-npm-${{ hashFiles('**/package.json') }}
+        restore-keys: |
+          ${{ runner.os }}-npm-
+
+    - name: Validate composer.json and composer.lock.
+      run: composer validate
+      shell: bash
+
+    - name: Install composer dependencies.
+      run: composer install --prefer-dist --no-progress --no-suggest --optimize-autoloader --classmap-authoritative
+      shell: bash
+
+    - name: Inject access token in .npmrc.
+      run: | 
+        echo "@helsingborg-stad:registry=https://npm.pkg.github.com/helsingborg-stad" >> ~/.npmrc
+        echo "//npm.pkg.github.com/:_authToken=${{ inputs.github-token }}" >> ~/.npmrc
+      shell: bash
+
+    - name: Get ACF
+      run: |
+        wget "${{ inputs.acf-url }}" -O acf.zip
+        unzip acf.zip -d wp-content/plugins/
+        rm acf.zip
+      shell: bash
+
+    - name: Execute buildscripts in themes and plugins folders.
+      run: php ./build.php --cleanup --no-composer-in-child-packages
+      shell: bash
+
+    - name: Cleanup .npmrc
+      run: rm ~/.npmrc
+      shell: bash
+
+    - name: The rsync deployment to www-data user.
+      uses: burnett01/rsync-deployments@6.0.0
+      with:
+        switches: -avzrog --delete --backup --backup-dir=${{ inputs.deploy-host-backup-path }}/$GITHUB_SHA --chown=${{ inputs.deploy-host-web-server-user }}:${{ inputs.deploy-host-web-server-user }} --exclude config --exclude config-example --exclude wp-content/uploads --exclude wp-content/plugins/gravityforms --exclude wp-content/plugins/wp-schema-pro --exclude track-assets --exclude wp-content/plugins/volontar-wordpress --exclude wp-content/languages --exclude .htaccess --exclude security.txt --exclude wp-content/plugins/local_* --exclude wp-content/mu-plugins/local_* --exclude wp-content/fonts 
+        path: .
+        remote_path: ${{ inputs.deploy-host-path }}
+        remote_host: ${{ inputs.deploy-host }}
+        remote_user: ${{ inputs.deploy-host-user }}
+        remote_key: ${{ inputs.deploy-host-user-key }}
+        remote_port: ${{ inputs.deploy-port }}
+
+    - name: Compress backup files.
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        script: tar --remove-files -zcf ${{ inputs.deploy-host-backup-path }}/${{ github.sha }}.tar.gz -C ${{ inputs.deploy-host-backup-path }} ${{ github.sha }}
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+
+    - name: Delete backups older than 7 days.
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        script: find ${{ inputs.deploy-host-backup-path }} -type f -mtime +7 -name '*.tar.gz' -delete
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+
+    - name: Set file permissions.
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        script: find ${{ inputs.deploy-host-path }} -path ${{ inputs.deploy-host-path }}/wp-content/uploads -prune -o ! -type l -exec chmod g+rw {} +
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+
+    - name: Clear all cache.
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        script: |
+          cd ${{ inputs.deploy-host-path }}
+          wp nginx-helper purge-all --allow-root || true
+          wp cache flush --allow-root || true
+          rm -rf ${{ inputs.deploy-host-path }}/../.cache/vhosts/Jelastic/* || true
+          rm ${{ inputs.deploy-host-path }}/wp-content/uploads/cache/* || true 
+          rm /tmp/blade-engine-cache/* || true
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
