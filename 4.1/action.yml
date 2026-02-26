@@ -244,7 +244,7 @@ runs:
     - name: The rsync deployment to www-data user.
       uses: burnett01/rsync-deployments@7.0.1
       with:
-        switches: -avzrog --ignore-errors --delete --backup --backup-dir=${{ inputs.deploy-host-backup-path }}/$GITHUB_SHA --exclude="/config" --exclude config-example --exclude wp-content/uploads --exclude wp-content/plugins/gravityforms --exclude wp-content/plugins/wp-schema-pro --exclude track-assets --exclude wp-content/plugins/volontar-wordpress --exclude wp-content/languages --exclude .htaccess --exclude security.txt --exclude wp-content/plugins/local_* --exclude wp-content/mu-plugins/local_* --exclude wp-content/fonts 
+        switches: -avzrog --ignore-errors --delete --backup --backup-dir=${{ inputs.deploy-host-backup-path }}/$GITHUB_SHA --chown=${{ inputs.deploy-host-web-server-user }}:${{ inputs.deploy-host-web-server-user }} --exclude="/config" --exclude config-example --exclude wp-content/uploads --exclude wp-content/plugins/gravityforms --exclude wp-content/plugins/wp-schema-pro --exclude track-assets --exclude wp-content/plugins/volontar-wordpress --exclude wp-content/languages --exclude .htaccess --exclude security.txt --exclude wp-content/plugins/local_* --exclude wp-content/mu-plugins/local_* --exclude wp-content/fonts 
         path: .
         remote_path: ${{ inputs.deploy-host-path }}
         remote_host: ${{ inputs.deploy-host }}
