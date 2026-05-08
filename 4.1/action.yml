@@ -212,8 +212,26 @@ runs:
       run: composer validate
       shell: bash
 
+    - name: Merge composer.local.json (pre-install).
+      run: |
+        if [ -f composer-local-merge.php ]; then
+          php composer-local-merge.php pre-install
+        else
+          echo "No composer-local-merge.php found - skipping local merge"
+        fi
+      shell: bash
+
     - name: Install composer dependencies.
       run: composer install --prefer-dist --no-progress --no-suggest --optimize-autoloader --classmap-authoritative
+      shell: bash
+
+    - name: Restore composer files after local merge (post-install).
+      run: |
+        if [ -f composer-local-merge.php ]; then
+          php composer-local-merge.php post-install
+        else
+          echo "No composer-local-merge.php found - skipping restore"
+        fi
       shell: bash
 
     - name: Write composer versions info file.
