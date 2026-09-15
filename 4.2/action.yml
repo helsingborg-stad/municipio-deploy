@@ -1,0 +1,363 @@
+name: Municipio Deploy 4.2
+description: Centralized deploy Action for municipio based sites in Helsingborg stad.
+inputs:
+  deploy-host:
+    description: Deployment host domain or ip.
+    required: true
+  deploy-port:
+    description: Deployment host ssh port.
+    default: 22
+    required: false
+  deploy-host-path:
+    description: Deployment path on server.
+    required: true
+  deploy-host-backup-path:
+    description: Backup path for changed and deleted files after rsync deploy.
+    required: true
+  deploy-host-user:
+    description: Username of the rsync deployment.
+    required: true
+  deploy-host-user-key: 
+    description: The ssh key of the user deploying through rsync.
+    required: true
+  deploy-host-web-server-user:
+    description: Host web server user that should own the files.
+    required: true
+  deploy-host-pagecache-path:
+    description: The path for LS PageCache. If set, files in here will be deleted.
+    required: false
+    default: ""
+  kill-lsphp:
+    description: Whether or not to kill all LSPHP processes.
+    required: false
+    default: false
+  github-token:
+    description: Github token for npm package retrieval.
+    required: true
+  acf-key:
+    description: ACF PRO license key for Composer authentication.
+    required: true
+  php-version:
+    description: PHP Version
+    default: 8.2
+    required: false
+  skip-preflight:
+    description: If the preflight should be skipped
+    default: false
+    required: false
+  newrelic-app-id:
+    description: App ID for deployment tracking with newrelic
+    default: ""
+    required: false
+  newrelic-api-key:
+    description: API Key for deployment tracking with newrelic
+    default: ""
+    required: false
+  sentry-url:
+    description: Base url to sentry instance
+    default: ""
+    required: false
+  sentry-org:
+    description: The Organization Slug the project is at
+    default: ""
+    required: false
+  sentry-version:
+    description: The version identifier of the release to track the deploy for. 
+    default: ""
+    required: false
+  sentry-api-key:
+    description: The API key to use with sentry
+    default: ""
+    required: false
+  sentry-env:
+    description: The enviroment to track the deploy for
+    default: ""
+    required: false
+  tideways-api-key:
+    description: The API key to use with tideways
+    default: ""
+    required: false
+  tideways-env:
+    description: The enviroment to track the deploy for
+    default: ""
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: Test - Check SSH connectivity
+      uses: appleboy/ssh-action@v1.1.0
+      if: ${{ inputs.skip-preflight == false }}
+      with:
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+        script: echo "Hello World from deploy!"
+
+    - name: Test - Create test file
+      uses: appleboy/ssh-action@v1.1.0
+      if: ${{ inputs.skip-preflight == false }}
+      with:
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+        script: touch testfile.txt
+
+    - name: Test - Change group of test file
+      uses: appleboy/ssh-action@v1.1.0
+      if: ${{ inputs.skip-preflight == false }}
+      with:
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+        script: chgrp litespeed testfile.txt
+
+    - name: Test - Change permissions of test file
+      uses: appleboy/ssh-action@v1.1.0
+      if: ${{ inputs.skip-preflight == false }}
+      with:
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+        script: chmod 644 testfile.txt
+
+    - name: Test - Manipulate existing file
+      uses: appleboy/ssh-action@v1.1.0
+      if: ${{ inputs.skip-preflight == false }}
+      with:
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+        script: |
+          cp -p testfile.txt testfile.remove.txt
+          rm testfile.remove.txt
+
+    - name: Test - Delete test file
+      uses: appleboy/ssh-action@v1.1.0
+      if: ${{ inputs.skip-preflight == false }}
+      with:
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+        script: rm testfile.txt
+
+    - name: Test - Check disk space
+      uses: appleboy/ssh-action@v1.1.0
+      if: ${{ inputs.skip-preflight == false }}
+      with:
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+        script: df -h | grep -vE "^Filesystem|tmpfs|cdrom" | awk "{ print \$4 }" | sed "s/G//" | awk "{ sum += \$1 } END { if (sum >= 1) { print \"Disk space is sufficient\" } else { print \"Insufficient disk space\"; exit 1 } }"
+
+    - name: Test - Check php version
+      uses: appleboy/ssh-action@v1.1.0
+      if: ${{ inputs.skip-preflight == false }}
+      with:
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+        script: |
+          output=$(php -v | tac | tail -n 1 | cut -d " " -f 2 | cut -c 1-3)
+          if [ "$output" = "${{ inputs.php-version }}" ]; then
+            echo "PHP version matches the expected version."
+          else
+            echo "PHP Version does not match the expected version."
+            exit 1
+          fi
+
+    - uses: actions/setup-node@v3
+      with:
+        node-version: 24.11.1
+
+    - name: Setup PHP with composer v2.
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ inputs.php-version }}
+        tools: composer:v2
+      env:
+        COMPOSER_TOKEN: ${{ inputs.github-token }}
+
+    - name: Get Composer Cache Directory.
+      id: composer-cache
+      run: |
+        echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+      shell: bash
+
+    - name: Cache composer packages.
+      uses: actions/cache@v3
+      with:
+        path: ${{ steps.composer-cache.outputs.dir }}
+        key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-composer-
+
+    - name: Cache node modules.
+      uses: actions/cache@v3
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-npm-${{ hashFiles('**/package.json') }}
+        restore-keys: |
+          ${{ runner.os }}-npm-
+
+    - name: Validate composer.json and composer.lock.
+      run: composer validate
+      shell: bash
+
+    - name: Merge composer.local.json (pre-install).
+      run: |
+        if [ -f composer-local-merge.php ]; then
+          php composer-local-merge.php pre-install
+        else
+          echo "No composer-local-merge.php found - skipping local merge"
+        fi
+      shell: bash
+
+    - name: Configure Composer authentication for ACF PRO.
+      run: composer config --global --auth http-basic.connect.advancedcustomfields.com "${{ inputs.acf-key }}" "https://${{ inputs.deploy-host }}"
+      shell: bash
+
+    - name: Install composer dependencies.
+      run: composer install --prefer-dist --no-progress --no-suggest --optimize-autoloader --classmap-authoritative
+      shell: bash
+
+    - name: Restore composer files after local merge (post-install).
+      run: |
+        if [ -f composer-local-merge.php ]; then
+          php composer-local-merge.php post-install
+        else
+          echo "No composer-local-merge.php found - skipping restore"
+        fi
+      shell: bash
+
+    - name: Write composer versions info file.
+      run: composer show >> composer.versions.md
+      shell: bash
+
+    - name: Inject access token in .npmrc.
+      run: | 
+        echo "@helsingborg-stad:registry=https://npm.pkg.github.com/helsingborg-stad" >> ~/.npmrc
+        echo "//npm.pkg.github.com/:_authToken=${{ inputs.github-token }}" >> ~/.npmrc
+      shell: bash
+
+    - name: Execute buildscripts in themes and plugins folders.
+      run: php ./build.php --cleanup --no-composer-in-child-packages --install-npm
+      shell: bash
+
+    - name: Cleanup .npmrc
+      run: rm ~/.npmrc
+      shell: bash
+
+    - name: The rsync deployment to www-data user.
+      uses: burnett01/rsync-deployments@7.0.1
+      with:
+        switches: -avzrog --ignore-errors --delete --backup --backup-dir=${{ inputs.deploy-host-backup-path }}/$GITHUB_SHA --exclude="/config" --exclude config-example --exclude wp-content/uploads --exclude wp-content/plugins/gravityforms --exclude wp-content/plugins/wp-schema-pro --exclude track-assets --exclude wp-content/plugins/volontar-wordpress --exclude wp-content/languages --exclude .htaccess --exclude security.txt --exclude wp-content/plugins/local_* --exclude wp-content/mu-plugins/local_* --exclude wp-content/fonts 
+        path: .
+        remote_path: ${{ inputs.deploy-host-path }}
+        remote_host: ${{ inputs.deploy-host }}
+        remote_user: ${{ inputs.deploy-host-user }}
+        remote_key: ${{ inputs.deploy-host-user-key }}
+        remote_port: ${{ inputs.deploy-port }}
+
+    - name: Compress backup files.
+      uses: appleboy/ssh-action@v1.1.0
+      with:
+        script: tar --remove-files -zcf ${{ inputs.deploy-host-backup-path }}/${{ github.sha }}.tar.gz -C ${{ inputs.deploy-host-backup-path }} ${{ github.sha }}
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+
+    - name: Delete backups older than 7 days.
+      uses: appleboy/ssh-action@v1.1.0
+      with:
+        script: find ${{ inputs.deploy-host-backup-path }} -type f -mtime +7 -name '*.tar.gz' -delete
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+
+    - name: Set file permissions.
+      uses: appleboy/ssh-action@v1.1.0
+      with:
+        script: |
+          find ${{ inputs.deploy-host-path }} -path ${{ inputs.deploy-host-path }} -prune -o ! -type l -exec chmod g+r {} +
+          find ${{ inputs.deploy-host-path }}/wp-content/uploads -path ${{ inputs.deploy-host-path }}/wp-content/uploads -prune -o ! -type l -exec chmod g+rw {} +
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+
+    - name: Clear all cache.
+      uses: appleboy/ssh-action@v1.1.0
+      with:
+        script: |
+          cd ${{ inputs.deploy-host-path }}
+          wp nginx-helper purge-all --allow-root || true
+          wp cache flush --allow-root || true
+          rm -rf ${{ inputs.deploy-host-path }}/../.cache/vhosts/Jelastic/* || true
+          rm -rf ${{ inputs.deploy-host-path }}/wp-content/uploads/cache/* || true 
+          rm -rf /tmp/blade-engine-cache/* || true
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+    - name: Clear LS PageCache
+      uses: appleboy/ssh-action@v1.1.0
+      if: ${{ inputs.deploy-host-pagecache-path != '' }}
+      with:
+        script: |
+          P="${{ inputs.deploy-host-pagecache-path }}"
+          rm -rf "$P"/**
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+    - name: Kill PHP
+      uses: appleboy/ssh-action@v1.1.0
+      if: ${{ inputs.kill-lsphp == true }}
+      with:
+        script: sudo killall -KILL lsphp
+        host: ${{ inputs.deploy-host }}
+        username: ${{ inputs.deploy-host-user }}
+        key: ${{ inputs.deploy-host-user-key }}
+        port: ${{ inputs.deploy-port }}
+    - name: Ping NewRelic
+      if: ${{ inputs.newrelic-app-id != '' && inputs.newrelic-api-key != '' }}
+      run: |
+        curl -X POST "https://api.newrelic.com/v2/applications/${{ inputs.newrelic-app-id }}/deployments.json" \
+        -H "X-Api-Key:${{ inputs.newrelic-api-key }}" \
+        -i \
+        -H "Content-Type: application/json" \
+        -d '{
+          "deployment": {
+            "revision": "${{ github.sha }}",
+            "user": "${{ github.actor }}"
+          }
+        }'
+      shell: bash
+    - name: Ping Sentry
+      if: ${{ inputs.sentry-url != '' && inputs.sentry-org != '' && inputs.sentry-version != '' && inputs.sentry-api-key != '' && inputs.sentry-env != '' }}
+      run: |
+        curl ${{ inputs.sentry-url }}/api/0/organizations/${{ inputs.sentry-org }}/releases/${{ inputs.sentry-version }}/deploys/ \
+          -H 'Authorization: Bearer ${{ inputs.sentry-api-key }}' \
+          -H 'Content-Type: application/json' \
+          -d '{"environment":"${{ inputs.sentry-env }}"}'
+      shell: bash
+
+    - name: Ping Tideways
+      uses: tideways/release-action@v1
+      if: ${{ inputs.tideways-api-key != '' && inputs.tideways-env != '' }}
+      with:
+        apiKey: ${{ inputs.tideways-api-key }}
+        name: 'Released commit ${{ github.sha }}'
+        environment: ${{ inputs.tideways-env }}
+        compareAfterMinutes: 90
