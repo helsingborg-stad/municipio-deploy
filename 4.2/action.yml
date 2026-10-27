@@ -176,7 +176,7 @@ runs:
 
     - uses: actions/setup-node@v3
       with:
-        node-version: 24.11.1
+        node-version: 24.22.1
 
     - name: Setup PHP with composer v2.
       uses: shivammathur/setup-php@v2
